@@ -18,6 +18,7 @@ const char mqttPassword[] = HIVE_PASS;
 
 // Topics
 const char mqttSubTopic[] = "home/set-module-state";
+const char mqttPubTopic[] = "home/sensor-data";
 
 // Pins
 
@@ -90,6 +91,28 @@ void handleMessage(int messageSize) {
       delay(1000);
     }
   }
+}
+
+void publishData(){
+    // Sensor logic here
+
+    // Create JSON object
+    StaticJsonDocument<256> doc;
+    doc["device"] = "GNU_ONE";
+    doc["temperature"] = "Simulated data";
+    doc["fan"] = "dummy fan state";
+    doc["light"] = "dummy light state";
+    doc["pump"] = "dummy pump state";
+
+    String jsonOut;
+    serializeJson(doc, jsonOut);
+
+    mqttClient.beginMessage(mqttPubTopic);
+    mqttClient.print(jsonOut);
+    mqttClient.endMessage();
+
+    Serial.print("Published JSON: ");
+    Serial.println(jsonOut);
 }
 
 void connectWifi() {
@@ -167,4 +190,12 @@ void loop() {
 
   mqttClient.poll();
   matrix.loadFrame(LEDMATRIX_EMOJI_HAPPY);
+
+  // Periodic JSON publish
+  static unsigned long lastMillis = 0;
+  if (millis() - lastMillis > 10000) {
+    lastMillis = millis();
+    
+    publishData();
+  }
 }

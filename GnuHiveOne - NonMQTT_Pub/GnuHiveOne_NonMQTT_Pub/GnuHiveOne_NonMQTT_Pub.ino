@@ -1,3 +1,4 @@
+#include "secrets.h"
 #include <WiFiS3.h>
 #include <ArduinoMqttClient.h>
 #include <ArduinoJson.h>
@@ -6,17 +7,16 @@
 ArduinoLEDMatrix matrix;
 
 // WiFi credentials
-const char ssid[] = "---";
-const char pass[] = "---";
+const char ssid[] = SECRET_SSID;
+const char pass[] = SECRET_PASS;
 
 // MQTT settings
 const char broker[] = "a0da1bf1.ala.eu-central-1.emqxsl.com";
 int port = 8883;
-const char mqttUsername[] = "---";
-const char mqttPassword[] = "---";
+const char mqttUsername[] = HIVE_USER;
+const char mqttPassword[] = HIVE_PASS;
 
 // Topics
-const char mqttPubTopic[] = "home/sensor-data";
 const char mqttSubTopic[] = "home/set-module-state";
 
 // Pins
@@ -27,14 +27,72 @@ MqttClient mqttClient(wifiClient);
 
 bool fanState = false;
 
-void setup() {
-  Serial.begin(115200);
-  while (!Serial);
+void handleMessage(int messageSize) {
+  String payload = mqttClient.readString();
+  Serial.print("Incoming JSON: ");
+  Serial.println(payload);
 
-  matrix.begin();
-  matrix.loadFrame(LEDMATRIX_EMOJI_BASIC);
+  StaticJsonDocument<256> doc;
+  DeserializationError err = deserializeJson(doc, payload);
 
-  // WiFi
+  if (err) {
+    Serial.print("JSON parse error: ");
+    Serial.println(err.c_str());
+    return;
+  }
+
+  const char* module = doc["Module"];
+  const char* state = doc["State"];
+
+  if (!module || !state) {
+    Serial.println("Missing 'Module' or 'State' fields in JSON.");
+    return;
+  }
+
+  Serial.print("Module: ");
+  Serial.print(module);
+  Serial.print(" - State: ");
+  Serial.println(state);
+
+  // Logic for fan, light, and pump display
+  if (strcmp(module, "Fan") == 0) {
+    if (strcmp(state, "ON") == 0) {
+      matrix.loadFrame(LEDMATRIX_HEART_BIG);
+      delay(1000);
+      matrix.loadFrame(LEDMATRIX_HEART_SMALL);
+      delay(1000);
+    } else {
+      matrix.loadFrame(LEDMATRIX_BLUETOOTH);
+      delay(1000);
+    }
+  }
+
+  if (strcmp(module, "Light") == 0) {
+    if (strcmp(state, "ON") == 0) {
+      matrix.loadFrame(LEDMATRIX_EMOJI_SAD);
+      delay(1000);
+      matrix.loadFrame(LEDMATRIX_EMOJI_BASIC);
+      delay(1000);
+    } else {
+      matrix.loadFrame(LEDMATRIX_BOOTLOADER_ON);
+      delay(1000);
+    }
+  }
+
+  if (strcmp(module, "Pump") == 0) {
+    if (strcmp(state, "ON") == 0) {
+      matrix.loadFrame(LEDMATRIX_LIKE);
+      delay(1000);
+      matrix.loadFrame(LEDMATRIX_MUSIC_NOTE);
+      delay(1000);
+    } else {
+      matrix.loadFrame(LEDMATRIX_CHIP);
+      delay(1000);
+    }
+  }
+}
+
+void connectWifi() {
   while (WiFi.begin(ssid, pass) != WL_CONNECTED) {
   Serial.print(".");
   delay(1000);
@@ -58,24 +116,42 @@ void setup() {
   } else {
     Serial.println("DNS resolution failed!");
   }
+}
+
+void connectMqtt() {
+  while (!mqttClient.connected()) {
+    Serial.print("Connecting to MQTT... ");
+
+    if (mqttClient.connect(broker, port)) {
+      Serial.println("connected.");
+
+      mqttClient.subscribe(mqttSubTopic);
+      Serial.println("Subscribed to: " + String(mqttSubTopic));
+    } else {
+      Serial.print("failed, error code = ");
+
+      Serial.println(mqttClient.connectError());
+      delay(2000);
+    }
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  while (!Serial);
+
+  matrix.begin();
+  matrix.loadFrame(LEDMATRIX_EMOJI_BASIC);
+
+  // WiFi
+  connectWifi();
 
   // MQTT auth
   mqttClient.setUsernamePassword(mqttUsername, mqttPassword);
+  mqttClient.onMessage(handleMessage);
   
   // Connect MQTT
-  Serial.print("Connecting to HiveMQ...");
-
-  int mqttResult = mqttClient.connect(broker, port);
-  if (!mqttResult) {
-    matrix.loadFrame(LEDMATRIX_EMOJI_SAD);
-    Serial.print("MQTT failed: ");
-    Serial.println(mqttClient.connectError());
-    while (1);
-  }
-  Serial.println("connected.");
-
-  mqttClient.subscribe(mqttSubTopic);
-  Serial.println("Subscribed to: " + String(mqttSubTopic));
+  connectMqtt();
 
   matrix.loadSequence(LEDMATRIX_ANIMATION_HEARTBEAT_LINE);
   matrix.begin();
@@ -85,102 +161,10 @@ void setup() {
 }
 
 void loop() {
-  matrix.loadFrame(LEDMATRIX_EMOJI_HAPPY);
-  mqttClient.poll();
-
-  // Handle incoming JSON messages
-  if (mqttClient.available()) {
-    String payload = mqttClient.readString();
-
-    Serial.print("Incoming JSON: ");
-    Serial.println(payload);
-
-    StaticJsonDocument<256> doc;
-    DeserializationError err = deserializeJson(doc, payload);
-
-    if (err) {
-      Serial.print("JSON parse error: ");
-      Serial.println(err.c_str());
-      return;
-    }
-
-    const char* module = doc["Module"];
-    const char* state = doc["State"];
-
-    if (module && state) {
-      Serial.print("Module: ");
-      Serial.print(module);
-      Serial.print(" - State: ");
-      Serial.println(state);
-
-      // Add pin logic here
-      // Example:
-      // 
-
-      if (strcmp(module, "Fan") == 0) {
-        if (strcmp(state, "ON") == 0) {
-          matrix.loadFrame(LEDMATRIX_HEART_BIG);
-          delay(1000);
-          matrix.loadFrame(LEDMATRIX_HEART_SMALL);
-          delay(1000);
-        } else {
-          matrix.loadFrame(LEDMATRIX_BLUETOOTH);
-          delay(1000);
-        }
-      }
-
-      if (strcmp(module, "Light") == 0) { 
-        if (strcmp(state, "ON") == 0) {
-          matrix.loadFrame(LEDMATRIX_EMOJI_SAD);
-          delay(1000);
-          matrix.loadFrame(LEDMATRIX_EMOJI_BASIC);
-          delay(1000);
-        } else {
-          matrix.loadFrame(LEDMATRIX_BOOTLOADER_ON);
-          delay(1000);
-        }
-      }
-
-      if (strcmp(module, "Pump") == 0) { 
-        if (strcmp(state, "ON") == 0) {
-          matrix.loadFrame(LEDMATRIX_LIKE);
-          delay(1000);
-          matrix.loadFrame(LEDMATRIX_MUSIC_NOTE);
-          delay(1000);
-        } else {
-          matrix.loadFrame(LEDMATRIX_CHIP);
-          delay(1000);
-        }
-      }
-
-    } else {
-      Serial.println("Missing 'module' or 'state' fields in JSON.");
-    }
-}
-
-  // Periodic JSON publish
-  static unsigned long lastMillis = 0;
-  if (millis() - lastMillis > 10000) {
-    lastMillis = millis();
-
-    // Sensor logic here
-
-    // Create JSON object
-    StaticJsonDocument<256> doc;
-    doc["device"] = "GNU_ONE";
-    doc["temperature"] = "Simulated data";
-    doc["fan"] = "dummy fan state";
-    doc["light"] = "dummy light state";
-    doc["pump"] = "dummy pump state";
-
-    String jsonOut;
-    serializeJson(doc, jsonOut);
-
-    mqttClient.beginMessage(mqttPubTopic);
-    mqttClient.print(jsonOut);
-    mqttClient.endMessage();
-
-    Serial.print("Published JSON: ");
-    Serial.println(jsonOut);
+  if (!mqttClient.connected()) {
+    connectMqtt();
   }
+
+  mqttClient.poll();
+  matrix.loadFrame(LEDMATRIX_EMOJI_HAPPY);
 }

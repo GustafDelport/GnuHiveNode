@@ -6,14 +6,14 @@
 ArduinoLEDMatrix matrix;
 
 // WiFi credentials
-const char ssid[] = "---";
-const char pass[] = "---";
+const char ssid[] = SECRET_SSID;
+const char pass[] = SECRET_PASS;
 
 // MQTT settings
 const char broker[] = "a0da1bf1.ala.eu-central-1.emqxsl.com";
 int port = 8883;
-const char mqttUsername[] = "---";
-const char mqttPassword[] = "---";
+const char mqttUsername[] = HIVE_USER;
+const char mqttPassword[] = HIVE_PASS;
 
 // Topics
 const char mqttPubTopic[] = "home/sensor-data";
